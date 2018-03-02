@@ -111,8 +111,11 @@
 - (void)hook_handleAppendNewMsg:(id)msg {
     [self hook_handleAppendNewMsg:msg];
     //判断是否开启了自动抢红包
-    if([self respondsToSelector:@selector(didClickNewMsgRemindPerformButton)]) {
-        [self performSelector:@selector(didClickNewMsgRemindPerformButton)];
+    if ([[QQPluginConfig sharedConfig] redPackEnable]) {
+        //判断是否开启了自动抢红包
+        if([self respondsToSelector:@selector(didClickNewMsgRemindPerformButton)]) {
+            [self performSelector:@selector(didClickNewMsgRemindPerformButton)];
+        }
     }
 }
 //不在前台时    //存在消息列表刷新的问题。
