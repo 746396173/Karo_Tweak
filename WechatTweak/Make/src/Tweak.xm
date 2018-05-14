@@ -55,7 +55,7 @@
                 return isSender() && [wrap.m_nsToUsr rangeOfString:@"chatroom"].location != NSNotFound;
             };
 
-            /** 是否抢自己发的红包 */
+            /** 是否抢的红包 */
             BOOL (^isReceiveSelfRedEnvelop)() = ^BOOL() {
                 return [WBRedEnvelopConfig sharedConfig].receiveSelfRedEnvelop;
             };
@@ -65,7 +65,7 @@
                 return [[WBRedEnvelopConfig sharedConfig].blackList containsObject:wrap.m_nsFromUsr];
             };
 
-            /** 是否自动抢红包 */
+            /** 是否自动后台抢红包 */
             BOOL (^shouldReceiveRedEnvelop)() = ^BOOL() {
                 if (![WBRedEnvelopConfig sharedConfig].autoReceiveEnable) { return NO; }
                 if (isGroupInBlackList()) { return NO; }
@@ -123,6 +123,113 @@
         break;
     }
     
+}
+
+- (void)onNewSyncShowPush:(NSDictionary *)message{
+    %orig;
+
+ 
+    if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
+        CMessageWrap *wrap = (CMessageWrap *)message;
+        switch(wrap.m_uiMessageType) {
+        case 49: { // AppNode
+
+            /** 是否为红包消息 */
+            BOOL (^isRedEnvelopMessage)() = ^BOOL() {
+                return [wrap.m_nsContent rangeOfString:@"wxpay://"].location != NSNotFound;
+            };
+            
+            if (isRedEnvelopMessage()) { // 红包
+                CContactMgr *contactManager = [[%c(MMServiceCenter) defaultCenter] getService:[%c(CContactMgr) class]];
+                CContact *selfContact = [contactManager getSelfContact];
+
+                BOOL (^isSender)() = ^BOOL() {
+                    return [wrap.m_nsFromUsr isEqualToString:selfContact.m_nsUsrName];
+                };
+
+                /** 是否别人在群聊中发消息 */
+                BOOL (^isGroupReceiver)() = ^BOOL() {
+                    return [wrap.m_nsFromUsr rangeOfString:@"@chatroom"].location != NSNotFound;
+                };
+
+                /** 是否自己在群聊中发消息 */
+                BOOL (^isGroupSender)() = ^BOOL() {
+                    return isSender() && [wrap.m_nsToUsr rangeOfString:@"chatroom"].location != NSNotFound;
+                };
+
+                /** 是否抢自己发的红包 */
+                BOOL (^isReceiveSelfRedEnvelop)() = ^BOOL() {
+                    return [WBRedEnvelopConfig sharedConfig].receiveSelfRedEnvelop;
+                };
+
+                /** 是否在黑名单中 */
+                BOOL (^isGroupInBlackList)() = ^BOOL() {
+                    return [[WBRedEnvelopConfig sharedConfig].blackList containsObject:wrap.m_nsFromUsr];
+                };
+
+                /** 是否抢后台的红包 */
+                BOOL (^isOpenBackgroundMode)() = ^BOOL() {
+                    return [WBRedEnvelopConfig sharedConfig].isOpenBackgroundMode;
+                };
+
+                /** 是否自动抢红包 */
+                BOOL (^shouldReceiveRedEnvelop)() = ^BOOL() {
+                    if (![WBRedEnvelopConfig sharedConfig].autoReceiveEnable) { return NO; }
+                    if (isGroupInBlackList()) { return NO; }
+
+                    return isGroupReceiver() || (isGroupSender() && isReceiveSelfRedEnvelop() && isOpenBackgroundMode());
+                };
+
+                NSDictionary *(^parseNativeUrl)(NSString *nativeUrl) = ^(NSString *nativeUrl) {
+                    nativeUrl = [nativeUrl substringFromIndex:[@"wxpay://c2cbizmessagehandler/hongbao/receivehongbao?" length]];
+                    return [%c(WCBizUtil) dictionaryWithDecodedComponets:nativeUrl separator:@"&"];
+                };
+
+                /** 获取服务端验证参数 */
+                void (^queryRedEnvelopesReqeust)(NSDictionary *nativeUrlDict) = ^(NSDictionary *nativeUrlDict) {
+                    NSMutableDictionary *params = [@{} mutableCopy];
+                    params[@"agreeDuty"] = @"0";
+                    params[@"channelId"] = [nativeUrlDict stringForKey:@"channelid"];
+                    params[@"inWay"] = @"0";
+                    params[@"msgType"] = [nativeUrlDict stringForKey:@"msgtype"];
+                    params[@"nativeUrl"] = [[wrap m_oWCPayInfoItem] m_c2cNativeUrl];
+                    params[@"sendId"] = [nativeUrlDict stringForKey:@"sendid"];
+
+                    WCRedEnvelopesLogicMgr *logicMgr = [[objc_getClass("MMServiceCenter") defaultCenter] getService:[objc_getClass("WCRedEnvelopesLogicMgr") class]];
+                    [logicMgr ReceiverQueryRedEnvelopesRequest:params];
+                };
+
+                /** 储存参数 */
+                void (^enqueueParam)(NSDictionary *nativeUrlDict) = ^(NSDictionary *nativeUrlDict) {
+                        WeChatRedEnvelopParam *mgrParams = [[WeChatRedEnvelopParam alloc] init];
+                        mgrParams.msgType = [nativeUrlDict stringForKey:@"msgtype"];
+                        mgrParams.sendId = [nativeUrlDict stringForKey:@"sendid"];
+                        mgrParams.channelId = [nativeUrlDict stringForKey:@"channelid"];
+                        mgrParams.nickName = [selfContact getContactDisplayName];
+                        mgrParams.headImg = [selfContact m_nsHeadImgUrl];
+                        mgrParams.nativeUrl = [[wrap m_oWCPayInfoItem] m_c2cNativeUrl];
+                        mgrParams.sessionUserName = isGroupSender() ? wrap.m_nsToUsr : wrap.m_nsFromUsr;
+                        mgrParams.sign = [nativeUrlDict stringForKey:@"sign"];
+
+                        mgrParams.isGroupSender = isGroupSender();
+
+                        [[WBRedEnvelopParamQueue sharedQueue] enqueue:mgrParams];
+                };
+
+                if (shouldReceiveRedEnvelop()) {
+                    NSString *nativeUrl = [[wrap m_oWCPayInfoItem] m_c2cNativeUrl];         
+                    NSDictionary *nativeUrlDict = parseNativeUrl(nativeUrl);
+
+                    queryRedEnvelopesReqeust(nativeUrlDict);
+                    enqueueParam(nativeUrlDict);
+                }
+            }   
+            break;
+        }
+        default:
+            break;
+        }
+    }
 }
 
 - (void)MessageReturn:(unsigned int)arg1 MessageInfo:(NSDictionary *)info Event:(unsigned int)arg3 {
@@ -406,28 +513,6 @@
 }
 %end
 
-// %hook MicroMessengerAppDelegate
-// - (_Bool)application:(id)arg1 didFinishLaunchingWithOptions:(id)arg2 {
-//     BOOL finish = %orig;
-//
-//     static dispatch_once_t onceToken;
-//     dispatch_once(&onceToken, ^{
-//         Method originalBundleIdentifierMethod = class_getInstanceMethod([NSBundle class], @selector(bundleIdentifier));
-//         Method swizzledBundleIdentifierMethod = class_getInstanceMethod([NSBundle class], @selector(tk_bundleIdentifier));
-//         if(originalBundleIdentifierMethod && swizzledBundleIdentifierMethod) {
-//             method_exchangeImplementations(originalBundleIdentifierMethod, swizzledBundleIdentifierMethod);
-//         }
-//
-//         Method originalInfoDictionaryMethod = class_getInstanceMethod([NSBundle class], @selector(infoDictionary));
-//         Method swizzledInfoDictionaryMethod = class_getInstanceMethod([NSBundle class], @selector(tk_infoDictionary));
-//         if(originalInfoDictionaryMethod && swizzledInfoDictionaryMethod) {
-//             method_exchangeImplementations(originalInfoDictionaryMethod, swizzledInfoDictionaryMethod);
-//         }
-//
-//     });
-//     return finish;
-// }
-// %end
 
 %hook WCDeviceStepObject
 -(NSInteger)m7StepCount {
@@ -523,3 +608,15 @@
 }
 
 %end
+
+%hook MicroMessengerAppDelegate
+
+- (void)applicationDidEnterBackground:(UIApplication *)application{
+  %orig;
+  
+  [[WBRedEnvelopConfig sharedConfig] enterBackgroundHandler];
+}
+
+%end
+
+

@@ -15,6 +15,7 @@ static NSString * const kReceiveSelfRedEnvelopKey = @"WBReceiveSelfRedEnvelopKey
 static NSString * const kSerialReceiveKey = @"WBSerialReceiveKey";
 static NSString * const kBlackListKey = @"WBBlackListKey";
 static NSString * const kRevokeEnablekey = @"WBRevokeEnable";
+static NSString * const kisOpenBackgroundModeKey = @"WBisOpenBackgroundModeKey";
 
 @interface WBRedEnvelopConfig ()
 
@@ -38,6 +39,7 @@ static NSString * const kRevokeEnablekey = @"WBRevokeEnable";
         _serialReceive = [[NSUserDefaults standardUserDefaults] boolForKey:kSerialReceiveKey];
         _blackList = [[NSUserDefaults standardUserDefaults] objectForKey:kBlackListKey];
         _receiveSelfRedEnvelop = [[NSUserDefaults standardUserDefaults] boolForKey:kReceiveSelfRedEnvelopKey];
+        _isOpenBackgroundMode = [[NSUserDefaults standardUserDefaults] boolForKey:kisOpenBackgroundModeKey];
         _revokeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:kRevokeEnablekey];
     }
     return self;
@@ -83,6 +85,69 @@ static NSString * const kRevokeEnablekey = @"WBRevokeEnable";
     
     [[NSUserDefaults standardUserDefaults] setBool:revokeEnable forKey:kRevokeEnablekey];
     [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)setIsOpenBackgroundMode:(BOOL)isOpenBackgroundMode {
+    _isOpenBackgroundMode = isOpenBackgroundMode;
+    
+    [[NSUserDefaults standardUserDefaults] setBool:isOpenBackgroundMode forKey:kisOpenBackgroundModeKey];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)setBgTaskIdentifier:(UIBackgroundTaskIdentifier)bgTaskIdentifier{
+    _bgTaskIdentifier = bgTaskIdentifier;
+}
+
+- (void)setBgTaskTimer:(NSTimer *)bgTaskTimer{
+    _bgTaskTimer = bgTaskTimer;
+}
+
+//程序进入后台处理
+- (void)enterBackgroundHandler{
+    if(!self.isOpenBackgroundMode){
+        return;
+    }
+    UIApplication *app = [UIApplication sharedApplication];
+    self.bgTaskIdentifier = [app beginBackgroundTaskWithExpirationHandler:^{
+        [app endBackgroundTask:self.bgTaskIdentifier];
+        self.bgTaskIdentifier = UIBackgroundTaskInvalid;
+    }];
+    self.bgTaskTimer = [NSTimer scheduledTimerWithTimeInterval:10.0 target:self selector:@selector(requestMoreTime) userInfo:nil repeats:YES];
+    [self.bgTaskTimer fire];
+}
+
+- (void)requestMoreTime{
+    if ([UIApplication sharedApplication].backgroundTimeRemaining < 30) {
+        [self playBlankAudio];
+        [[UIApplication sharedApplication] endBackgroundTask:self.bgTaskIdentifier];
+        self.bgTaskIdentifier = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
+            [[UIApplication sharedApplication] endBackgroundTask:self.bgTaskIdentifier];
+            self.bgTaskIdentifier = UIBackgroundTaskInvalid;
+        }];
+    }
+}
+
+//播放无声音频
+- (void)playBlankAudio{
+    [self playAudioForResource:@"blank" ofType:@"caf"];
+}
+
+//开始播放音频
+- (void)playAudioForResource:(NSString *)resource ofType:(NSString *)ofType{
+    NSError *setCategoryErr = nil;
+    NSError *activationErr  = nil;
+    [[AVAudioSession sharedInstance]
+     setCategory: AVAudioSessionCategoryPlayback
+     withOptions: AVAudioSessionCategoryOptionMixWithOthers
+     error: &setCategoryErr];
+    [[AVAudioSession sharedInstance]
+     setActive: YES
+     error: &activationErr];
+    NSURL *blankSoundURL = [[NSURL alloc]initWithString:[[NSBundle mainBundle] pathForResource:resource ofType:ofType]];
+    if(blankSoundURL){
+        self.blankPlayer = [[AVAudioPlayer alloc] initWithContentsOfURL:blankSoundURL error:nil];
+        [self.blankPlayer play];
+    }
 }
 
 @end

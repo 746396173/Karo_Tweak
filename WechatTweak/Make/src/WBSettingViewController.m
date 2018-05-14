@@ -72,6 +72,7 @@
     MMTableViewSectionInfo *sectionInfo = [objc_getClass("MMTableViewSectionInfo") sectionInfoDefaut];
     
     [sectionInfo addCell:[self createAutoReceiveRedEnvelopCell]];
+    [sectionInfo addCell:[self backgroundRedEnvelopCell]];
     [sectionInfo addCell:[self createDelaySettingCell]];
     
     [self.tableViewInfo addSection:sectionInfo];
@@ -81,6 +82,10 @@
 - (MMTableViewCellInfo *)createAutoReceiveRedEnvelopCell {
     return [objc_getClass("MMTableViewCellInfo") switchCellForSel:@selector(switchRedEnvelop:) target:self title:@"自动抢红包" on:[WBRedEnvelopConfig sharedConfig].autoReceiveEnable];
 }
+- (MMTableViewCellInfo *)backgroundRedEnvelopCell {
+    return [objc_getClass("MMTableViewCellInfo") switchCellForSel:@selector(backgroundSwitchRedEnvelop:) target:self title:@"后台抢红包" on:[WBRedEnvelopConfig sharedConfig].isOpenBackgroundMode];
+}
+
 
 - (MMTableViewCellInfo *)createDelaySettingCell {
     NSInteger delaySeconds = [WBRedEnvelopConfig sharedConfig].delaySeconds;
@@ -100,6 +105,13 @@
     
     [self reloadTableData];
 }
+
+- (void)backgroundSwitchRedEnvelop:(UISwitch *)envelopSwitch {
+    [WBRedEnvelopConfig sharedConfig].isOpenBackgroundMode = envelopSwitch.on;
+    
+    [self reloadTableData];
+}
+
 
 - (void)settingDelay {
     UIAlertView *alert = [UIAlertView new];

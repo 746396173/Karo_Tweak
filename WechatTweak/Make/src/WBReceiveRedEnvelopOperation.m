@@ -49,13 +49,16 @@
 }
 
 - (void)main {
-    sleep(self.delaySeconds);
-    
+    long beginTime = self.delaySeconds - 1 > 0 ? (self.delaySeconds -1) : 0;
+    int delayTimes = [self genRandomNumberFrom:beginTime to:self.delaySeconds];
+    sleep(delayTimes);
     WCRedEnvelopesLogicMgr *logicMgr = [[objc_getClass("MMServiceCenter") defaultCenter] getService:[objc_getClass("WCRedEnvelopesLogicMgr") class]];
     [logicMgr OpenRedEnvelopesRequest:[self.redEnvelopParam toParams]];
     
     self.finished = YES;
     self.executing = NO;
+
+   
 }
 
 - (void)cancel {
@@ -77,6 +80,11 @@
 
 - (BOOL)isAsynchronous {
     return YES;
+}
+
+//在指定范围生成随机数
+- (int)genRandomNumberFrom:(long)from to:(long)to{
+    return (int)(from + (arc4random() % (to - from + 1)));
 }
 
 @end
